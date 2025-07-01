@@ -1,0 +1,20 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Rules for article assets (images, files)
+    // Allow anyone to read, but only authenticated users to write.
+    match /articles/{allPaths=**} {
+      allow read;
+      allow write: if request.auth != null;
+    }
+
+    // Rules for user profile photos
+    // Allow anyone to read.
+    // Only allow the authenticated user to write to their own photo path.
+    match /profiles/{userId}/photo {
+      allow read;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
