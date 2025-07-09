@@ -1,0 +1,114 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // --- Helper Functions ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      // Check if the user document exists and has the 'Admin' role.
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin';
+    }
+
+    function isRedactor() {
+        // Check if the user document exists before trying to access its data.
+        return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+               (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Redactor' || 
+                get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin');
+    }
+
+    function isRedactorJr() {
+        // Check if the user document exists before trying to access its data.
+        return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+               (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Redactor Jr.' || 
+                get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Redactor' ||
+                get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin');
+    }
+
+    // --- Collection Rules ---
+
+    // Articles can be read by anyone, created/updated by Jr. Editors and up,
+    // but only Admins/Editors can publish. Deletion is Admin-only.
+    match /articles/{articleId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isRedactorJr();
+      allow update: if isSignedIn() && 
+                      (isRedactor() || 
+                      (isRedactorJr() && resource.data.authorId == request.auth.uid));
+      allow delete: if isSignedIn() && isAdmin();
+    }
+
+    // Profiles can be read by anyone.
+    // Users can only create/update their own profile.
+    match /profiles/{userId} {
+      allow read: if true;
+      // Allow any signed-in user to create their own profile document.
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if isSignedIn() && isOwner(userId);
+      allow delete: if false; // Profiles are not deleted
+    }
+
+    // Users collection can be read by any authenticated user (to get their own role).
+    // Creation is allowed for any new authenticated user (for the first admin).
+    // Only Admins can update roles later.
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && isAdmin();
+      allow delete: if false; // Users are not deleted from here
+    }
+
+    // Invitations can only be managed by Admins.
+    match /invitations/{inviteId} {
+      allow read: if true 
+			allow create, update, delete: if isSignedIn() && isAdmin();
+    }
+
+    // Site configuration is readable by anyone, but only Admins can modify it after creation.
+    match /siteConfig/{docId} {
+        allow read: if true;
+        // Allow creation for the first user.
+        allow create: if isSignedIn();
+        allow update: if isSignedIn() && isAdmin();
+        allow delete: if false;
+    }
+
+    // Public configuration is readable by anyone, but only Admins can modify it after creation.
+    match /publicConfig/{docId} {
+        allow read: if true;
+        // Allow creation for the first user.
+        allow create: if isSignedIn();
+        allow update: if isSignedIn() && isAdmin();
+        allow delete: if false;
+    }
+    
+    // License document can be created by the first authenticated user and then is immutable.
+    match /license/{docId} {
+        allow read: if true;
+        allow create: if isSignedIn();
+        allow update, delete: if false;
+    }
+
+    // Token usage can be written by any signed-in user (as the AI proxy calls will be authenticated)
+    // Reading is restricted.
+    match /tokenUsage/{licenseId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn();
+    }
+    
+    match /customContentTypes/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+  }
+}

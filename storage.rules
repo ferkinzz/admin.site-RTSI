@@ -1,0 +1,28 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Allow public read access for all files
+    match /{allPaths=**} {
+      allow read;
+    }
+
+    // Allow authenticated users to upload to 'articles' and 'profiles'
+    match /articles/{fileName} {
+      allow write: if request.auth != null;
+    }
+
+    match /profiles/{userId}/{fileName} {
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Rules for optimized images
+    // Any authenticated user can upload and delete.
+    // Anyone can read.
+    match /optimized-images/{type}/{fileName} {
+      allow read;
+      allow write: if request.auth != null;
+    }
+  }
+}
